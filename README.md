@@ -1,37 +1,8 @@
-<p align="center">
-  <img src="docs/logo.svg" width="300px"></img>
-</p>
-<p align="center">
-  <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/dullage/flatnotes?style=for-the-badge">
-</p>
+# Flatnotes
 
-A self-hosted, database-less note-taking web app that utilises a flat folder of markdown files for storage.
+A fork of the self-hosted, database-less note-taking web app that utilises a flat folder of markdown files for storage.
 
-Log into the [demo site](https://demo.flatnotes.io) and take a look around. *Note: This site resets every 15 minutes.*
-
-## Contents
-
-* [Design Principle](#design-principle)
-* [Features](#features)
-* [Getting Started](#getting-started)
-  * [Hosted](#hosted)
-  * [Self Hosted](#self-hosted)
-* [Roadmap](#roadmap)
-* [Contributing](#contributing)
-* [Sponsorship](#sponsorship)
-* [Thanks](#thanks)
-
-## Design Principle
-
-flatnotes is designed to be a distraction-free note-taking app that puts your note content first. This means:
-
-* A clean and simple user interface.
-* No folders, notebooks or anything like that. Just all of your notes, backed by powerful search and tagging functionality.
-* Quick access to a full-text search from anywhere in the app (keyboard shortcut "/").
-
-Another key design principle is not to take your notes hostage. Your notes are just markdown files. There's no database, proprietary formatting, complicated folder structures or anything like that. You're free at any point to just move the files elsewhere and use another app.
-
-Equally, the only thing flatnotes caches is the search index and that's incrementally synced on every search (and when flatnotes first starts). This means that you're free to add, edit & delete the markdown files outside of flatnotes even whilst flatnotes is running.
+flatnotes is designed to be a distraction-free note-taking app that puts your note content first. However my fork adds features which are not planned (such as groups) while trying to keep that distraction-free interface
 
 ## Features
 
@@ -44,23 +15,21 @@ Equally, the only thing flatnotes caches is the search index and that's incremen
 * Light/dark themes.
 * Multiple authentication options (none, read-only, username/password, 2FA).
 * Restful API.
-
-See [the wiki](https://github.com/dullage/flatnotes/wiki) for more details.
+* Note Grouping
 
 ## Getting Started
 
-### Hosted
+### Docker
 
-A quick and easy way to get started with flatnotes is to host it on PikaPods. Just click the button below and follow the instructions.
+This fork doesn't publish an image, so build it from source:
 
-[![PikaPods](https://www.pikapods.com/static/run-button-34.svg)](https://www.pikapods.com/pods?run=flatnotes)
+```shell
+git clone https://github.com/justinthebergejr/flatnotes.git
+cd flatnotes
+docker build -t flatnotes-fork .
+```
 
-
-### Self Hosted
-
-If you'd prefer to host flatnotes yourself then the recommendation is to use Docker.
-
-### Example Docker Run Command
+Then run it:
 
 ```shell
 docker run -d \
@@ -72,17 +41,16 @@ docker run -d \
   -e "FLATNOTES_SECRET_KEY=aLongRandomSeriesOfCharacters" \
   -v "$(pwd)/data:/data" \
   -p "8080:8080" \
-  dullage/flatnotes:latest
+  flatnotes-fork
 ```
 
-### Example Docker Compose
-```yaml
-version: "3"
+Or with Docker Compose:
 
+```yaml
 services:
   flatnotes:
     container_name: flatnotes
-    image: dullage/flatnotes:latest
+    build: .
     environment:
       PUID: 1000
       PGID: 1000
@@ -92,32 +60,39 @@ services:
       FLATNOTES_SECRET_KEY: "aLongRandomSeriesOfCharacters"
     volumes:
       - "./data:/data"
-      # Optional. Allows you to save the search index in a different location: 
-      # - "./index:/data/.flatnotes"
     ports:
       - "8080:8080"
     restart: unless-stopped
 ```
 
-See the [Environment Variables](https://github.com/dullage/flatnotes/wiki/Environment-Variables) article in the wiki for a full list of configuration options.
+Existing flatnotes data works as-is. Notes already in your data folder will show up with no group.
+
+### Running locally
+
+Instructions to come soon
+
+## Staying Up to Date with Upstream
+
+To pull in new changes from the original project:
+
+```shell
+git remote add upstream https://github.com/dullage/flatnotes.git
+git fetch upstream
+git merge upstream/develop
+```
 
 ## Roadmap
 
-I want to keep flatnotes as simple and distraction-free as possible which means limiting new features. This said, I welcome feedback and suggestions.
+As flatnotes was designed, I am trying to keep it as simple and distraction-free as possible while adding quality of life features. I am currently a college student and basically just adding as I think of stuff and find the time to implement it.
 
-## Contributing
+## Contribution
 
-If you're interested in contributing to flatnotes, then please read the [CONTRIBUTING.md](CONTRIBUTING.md) file.
-
-## Sponsorship
-
-If you find this project useful, please consider buying me a beer. It would genuinely make my day.
-
-[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/Dullage)
+I completely support any contributions you wish to add! 
 
 ## Thanks
 
-A special thanks to 2 fantastic open-source projects that make flatnotes possible.
+A thanks to 2 fantastic open-source projects that make flatnotes possible, and to Adam Dullage for creating flatnotes in the first place.
 
 * [Whoosh](https://whoosh.readthedocs.io/en/latest/intro.html) - A fast, pure Python search engine library.
 * [TOAST UI Editor](https://ui.toast.com/tui-editor) - A GFM Markdown and WYSIWYG editor for the browser.
+* [Flatnotes](https://github.com/dullage/flatnotes) - Flatnotes

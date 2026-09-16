@@ -35,3 +35,15 @@ export function loadTheme() {
     setDarkThemeOn(false);
   }
 }
+
+export function splitNoteTitle(title) {
+  const index = title ? title.indexOf("/") : -1;
+  if (index === -1) {
+    return { group: null, name: title };
+  }
+  return { group: title.slice(0, index), name: title.slice(index + 1) };
+}
+
+export function joinNoteTitle(group, name) {
+  return group ? `${group}/${name}` : name;
+}

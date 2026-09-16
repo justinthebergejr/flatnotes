@@ -18,11 +18,11 @@ from whoosh.query import Every
 from whoosh.searching import Hit
 from whoosh.support.charset import accent_map
 
-from helpers import get_env, is_valid_filename
+from helpers import get_env, is_valid_group_name, is_valid_note_path
 from logger import logger
 
 from ..base import BaseNotes
-from ..models import Note, NoteCreate, NoteUpdate, SearchResult
+from ..models import GroupCreate, Note, NoteCreate, NoteUpdate, SearchResult
 
 MARKDOWN_EXT = ".md"
 INDEX_SCHEMA_VERSION = "5"
@@ -59,6 +59,7 @@ class FileSystemNotes(BaseNotes):
     def create(self, data: NoteCreate) -> Note:
         """Create a new note."""
         filepath = self._path_from_title(data.title)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         self._write_file(filepath, data.content)
         return Note(
             title=data.title,
@@ -68,7 +69,7 @@ class FileSystemNotes(BaseNotes):
 
     def get(self, title: str) -> Note:
         """Get a specific note."""
-        is_valid_filename(title)
+        is_valid_note_path(title)
         filepath = self._path_from_title(title)
         content = self._read_file(filepath)
         return Note(
@@ -79,7 +80,7 @@ class FileSystemNotes(BaseNotes):
 
     def update(self, title: str, data: NoteUpdate) -> Note:
         """Update a specific note."""
-        is_valid_filename(title)
+        is_valid_note_path(title)
         filepath = self._path_from_title(title)
         if data.new_title is not None:
             new_filepath = self._path_from_title(data.new_title)
@@ -87,6 +88,7 @@ class FileSystemNotes(BaseNotes):
                 raise FileExistsError(
                     f"Failed to rename. '{data.new_title}' already exists."
                 )
+            os.makedirs(os.path.dirname(new_filepath), exist_ok=True)
             os.rename(filepath, new_filepath)
             title = data.new_title
             filepath = new_filepath
@@ -103,7 +105,7 @@ class FileSystemNotes(BaseNotes):
 
     def delete(self, title: str) -> None:
         """Delete a specific note."""
-        is_valid_filename(title)
+        is_valid_note_path(title)
         filepath = self._path_from_title(title)
         os.remove(filepath)
 
@@ -159,12 +161,61 @@ class FileSystemNotes(BaseNotes):
             tags = reader.field_terms("tags")
             return [tag for tag in tags]
 
+    def get_groups(self) -> list[str]:
+        """Return a sorted list of all group names."""
+        groups = []
+        for name in os.listdir(self.storage_path):
+            if not os.path.isdir(os.path.join(self.storage_path, name)):
+                continue
+            try:
+                is_valid_group_name(name)
+            except ValueError:
+                continue
+            groups.append(name)
+        return sorted(groups, key=str.lower)
+
+    def create_group(self, data: GroupCreate) -> str:
+        """Create a new, empty group."""
+        os.mkdir(os.path.join(self.storage_path, data.name))
+        return data.name
+
+    def delete_group(
+        self, name: str, notes: Literal["move", "delete"] = "move"
+    ) -> None:
+        """Delete a group. Its notes are either moved out of the group or
+        deleted along with it."""
+        is_valid_group_name(name)
+        group_path = os.path.join(self.storage_path, name)
+        if not os.path.isdir(group_path):
+            raise FileNotFoundError(f"Group '{name}' does not exist.")
+        if notes == "move":
+            filenames = [
+                filename
+                for filename in os.listdir(group_path)
+                if filename.endswith(MARKDOWN_EXT)
+            ]
+            clashes = [
+                self._strip_ext(filename)
+                for filename in filenames
+                if os.path.exists(os.path.join(self.storage_path, filename))
+            ]
+            if clashes:
+                raise FileExistsError(clashes)
+            for filename in filenames:
+                os.rename(
+                    os.path.join(group_path, filename),
+                    os.path.join(self.storage_path, filename),
+                )
+        shutil.rmtree(group_path)
+
     @property
     def _index_path(self):
         return os.path.join(self.storage_path, ".flatnotes")
 
     def _path_from_title(self, title: str) -> str:
-        return os.path.join(self.storage_path, title + MARKDOWN_EXT)
+        return os.path.join(
+            self.storage_path, *(title + MARKDOWN_EXT).split("/")
+        )
 
     def _get_by_filename(self, filename: str) -> Note:
         """Get a note by its filename."""
@@ -223,13 +274,21 @@ class FileSystemNotes(BaseNotes):
         )
 
     def _list_all_note_filenames(self) -> List[str]:
-        """Return a list of all note filenames."""
-        return [
-            os.path.split(filepath)[1]
-            for filepath in glob.glob(
-                os.path.join(self.storage_path, "*" + MARKDOWN_EXT)
+        """Return a list of all note filenames, including notes in groups.
+        Notes in a group are returned as 'Group/Title.md'."""
+        filenames = []
+        for filepath in glob.glob(
+            os.path.join(self.storage_path, "*" + MARKDOWN_EXT)
+        ) + glob.glob(os.path.join(self.storage_path, "*", "*" + MARKDOWN_EXT)):
+            filename = os.path.relpath(filepath, self.storage_path).replace(
+                os.sep, "/"
             )
-        ]
+            try:
+                is_valid_note_path(self._strip_ext(filename))
+            except ValueError:
+                continue
+            filenames.append(filename)
+        return filenames
 
     def _sync_index(self, optimize: bool = False, clean: bool = False) -> None:
         """Synchronize the index with the notes directory.
@@ -383,12 +442,22 @@ class FileSystemNotes(BaseNotes):
     @staticmethod
     def _read_file(filepath: str):
         logger.debug(f"Reading from '{filepath}'")
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
         return content
 
     @staticmethod
     def _write_file(filepath: str, content: str, overwrite: bool = False):
         logger.debug(f"Writing to '{filepath}'")
-        with open(filepath, "w" if overwrite else "x") as f:
-            f.write(content)
+        if not overwrite:
+            with open(filepath, "x", encoding="utf-8") as f:
+                f.write(content)
+            return
+        temp_filepath = filepath + ".tmp"
+        try:
+            with open(temp_filepath, "w", encoding="utf-8") as f:
+                f.write(content)
+            os.replace(temp_filepath, filepath)
+        finally:
+            if os.path.exists(temp_filepath):
+                os.remove(temp_filepath)

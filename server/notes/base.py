@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Literal
 
-from .models import Note, NoteCreate, NoteUpdate, SearchResult
+from .models import GroupCreate, Note, NoteCreate, NoteUpdate, SearchResult
 
 
 class BaseNotes(ABC):
@@ -39,4 +39,22 @@ class BaseNotes(ABC):
     @abstractmethod
     def get_tags(self) -> list[str]:
         """Get a list of all indexed tags."""
+        pass
+
+    @abstractmethod
+    def get_groups(self) -> list[str]:
+        """Get a list of all groups."""
+        pass
+
+    @abstractmethod
+    def create_group(self, data: GroupCreate) -> str:
+        """Create a new, empty group."""
+        pass
+
+    @abstractmethod
+    def delete_group(
+        self, name: str, notes: Literal["move", "delete"] = "move"
+    ) -> None:
+        """Delete a group. Its notes are either moved out of the group or
+        deleted along with it."""
         pass

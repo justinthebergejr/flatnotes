@@ -1,8 +1,5 @@
 <template>
   <div class="flex h-full max-w-[700px] flex-col">
-    <!-- Search Input -->
-    <SearchInput :initialSearchTerm="props.searchTerm" class="mb-2" />
-
     <LoadingIndicator ref="loadingIndicator" class="flex-1">
       <!-- Sort By -->
       <div class="flex justify-end">
@@ -55,7 +52,6 @@ import LoadingIndicator from "../components/LoadingIndicator.vue";
 import PrimeMenu from "../components/PrimeMenu.vue";
 import Tag from "../components/Tag.vue";
 import { params, searchSortOptions } from "../constants.js";
-import SearchInput from "../partials/SearchInput.vue";
 
 const props = defineProps({
   searchTerm: String,

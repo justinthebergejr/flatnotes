@@ -1,10 +1,18 @@
-import router from "./router.js";
+import { splitNoteTitle } from "./helpers.js";
 
 class Note {
   constructor(note) {
     this.title = note?.title;
     this.lastModified = note?.lastModified;
     this.content = note?.content;
+  }
+
+  get group() {
+    return splitNoteTitle(this.title).group;
+  }
+
+  get name() {
+    return splitNoteTitle(this.title).name;
   }
 
   get lastModifiedAsDate() {

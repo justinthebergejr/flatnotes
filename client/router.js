@@ -3,6 +3,7 @@ import * as constants from "./constants.js";
 import { createRouter, createWebHistory } from "vue-router";
 
 import { authCheck } from "./api.js";
+import { splitNoteTitle } from "./helpers.js";
 
 const router = createRouter({
   history: createWebHistory(""),
@@ -19,7 +20,7 @@ const router = createRouter({
       props: (route) => ({ redirect: route.query[constants.params.redirect] }),
     },
     {
-      path: "/note/:title",
+      path: "/note/:title(.*)",
       name: "note",
       component: () => import("./views/Note.vue"),
       props: true,
@@ -66,7 +67,7 @@ router.afterEach((to) => {
   let title = "flatnotes";
   if (to.name === "note") {
     if (to.params.title) {
-      title = `${to.params.title} - ${title}`;
+      title = `${splitNoteTitle(to.params.title).name} - ${title}`;
     } else {
       title = "New Note - " + title;
     }

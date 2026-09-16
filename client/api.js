@@ -140,6 +140,34 @@ export async function getTags() {
   }
 }
 
+export async function getGroups() {
+  try {
+    const response = await api.get("api/groups");
+    return response.data;
+  } catch (response) {
+    return Promise.reject(response);
+  }
+}
+
+export async function createGroup(name) {
+  try {
+    const response = await api.post("api/groups", { name: name });
+    return response.data;
+  } catch (response) {
+    return Promise.reject(response);
+  }
+}
+
+export async function deleteGroup(name, notes) {
+  try {
+    await api.delete(`api/groups/${encodeURIComponent(name)}`, {
+      params: { notes: notes },
+    });
+  } catch (response) {
+    return Promise.reject(response);
+  }
+}
+
 export async function createAttachment(file) {
   try {
     const formData = new FormData();

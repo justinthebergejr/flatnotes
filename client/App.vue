@@ -9,10 +9,17 @@
       v-if="showNavBar"
       ref="navBar"
       :class="{ 'print:hidden': route.name == 'note' }"
-      :hide-logo="!showNavBarLogo"
       @toggleSearchModal="toggleSearchModal"
     />
-    <RouterView />
+    <div class="flex min-h-0 flex-1">
+      <SideBar
+        v-if="showSideBar"
+        class="mr-8 hidden w-64 shrink-0 overflow-y-auto md:block print:hidden"
+      />
+      <div class="flex min-w-0 flex-1 flex-col">
+        <RouterView />
+      </div>
+    </div>
   </LoadingIndicator>
 </template>
 
@@ -28,6 +35,7 @@ import PrimeToast from "./components/PrimeToast.vue";
 import { useGlobalStore } from "./globalStore.js";
 import { loadTheme } from "./helpers.js";
 import NavBar from "./partials/NavBar.vue";
+import SideBar from "./partials/SideBar.vue";
 import SearchModal from "./partials/SearchModal.vue";
 import LoadingIndicator from "./components/LoadingIndicator.vue";
 import router from "./router.js";
@@ -77,8 +85,9 @@ const showNavBar = computed(() => {
   return route.name !== "login";
 });
 
-const showNavBarLogo = computed(() => {
-  return route.name !== "home";
+const showSideBar = computed(() => {
+  const isNotePage = ["note", "new"].includes(route.name);
+  return showNavBar.value && !(isNotePage && globalStore.sideBarHidden);
 });
 
 function toggleSearchModal() {

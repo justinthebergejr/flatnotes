@@ -12,7 +12,7 @@ from auth.models import Login, Token
 from global_config import AuthType, GlobalConfig, GlobalConfigResponseModel
 from helpers import replace_base_href
 from notes.base import BaseNotes
-from notes.models import Note, NoteCreate, NoteUpdate, SearchResult
+from notes.models import GroupCreate, Note, NoteCreate, NoteUpdate, SearchResult
 
 global_config = GlobalConfig()
 auth: BaseAuth = global_config.load_auth()
@@ -32,7 +32,7 @@ replace_base_href("client/dist/index.html", global_config.path_prefix)
 @router.get("/login", include_in_schema=False)
 @router.get("/search", include_in_schema=False)
 @router.get("/new", include_in_schema=False)
-@router.get("/note/{title}", include_in_schema=False)
+@router.get("/note/{title:path}", include_in_schema=False)
 def root(title: str = ""):
     with open("client/dist/index.html", "r", encoding="utf-8") as f:
         html = f.read()
@@ -68,7 +68,7 @@ def auth_check() -> str:
 # region Notes
 # Get Note
 @router.get(
-    "/api/notes/{title}",
+    "/api/notes/{title:path}",
     dependencies=auth_deps,
     response_model=Note,
 )
@@ -108,7 +108,7 @@ if global_config.auth_type != AuthType.READ_ONLY:
 
     # Update Note
     @router.patch(
-        "/api/notes/{title}",
+        "/api/notes/{title:path}",
         dependencies=auth_deps,
         response_model=Note,
     )
@@ -129,7 +129,7 @@ if global_config.auth_type != AuthType.READ_ONLY:
 
     # Delete Note
     @router.delete(
-        "/api/notes/{title}",
+        "/api/notes/{title:path}",
         dependencies=auth_deps,
         response_model=None,
     )
@@ -174,6 +174,59 @@ def search(
 def get_tags():
     """Get a list of all indexed tags."""
     return note_storage.get_tags()
+
+
+@router.get(
+    "/api/groups",
+    dependencies=auth_deps,
+    response_model=List[str],
+)
+def get_groups():
+    """Get a list of all groups."""
+    return note_storage.get_groups()
+
+
+if global_config.auth_type != AuthType.READ_ONLY:
+
+    @router.post(
+        "/api/groups",
+        dependencies=auth_deps,
+        response_model=str,
+    )
+    def post_group(group: GroupCreate):
+        """Create a new, empty group."""
+        try:
+            return note_storage.create_group(group)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail=api_messages.invalid_group_name
+            )
+        except FileExistsError:
+            raise HTTPException(
+                status_code=409, detail=api_messages.group_exists
+            )
+
+    @router.delete(
+        "/api/groups/{name}",
+        dependencies=auth_deps,
+        response_model=None,
+    )
+    def delete_group(name: str, notes: Literal["move", "delete"] = "move"):
+        """Delete a group. Its notes are either moved out of the group or
+        deleted along with it."""
+        try:
+            note_storage.delete_group(name, notes)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail=api_messages.invalid_group_name
+            )
+        except FileNotFoundError:
+            raise HTTPException(404, api_messages.group_not_found)
+        except FileExistsError as e:
+            raise HTTPException(
+                status_code=409,
+                detail=api_messages.group_note_clash + ", ".join(e.args[0]),
+            )
 
 
 # endregion

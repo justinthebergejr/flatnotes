@@ -3,7 +3,7 @@
   <ConfirmModal
     v-model="isDeleteModalVisible"
     title="Confirm Deletion"
-    :message="`Are you sure you want to delete the note '${note.title}'?`"
+    :message="`Are you sure you want to delete the note '${note.name}'?`"
     confirmButtonText="Delete"
     confirmButtonStyle="danger"
     @confirm="deleteConfirmedHandler"
@@ -20,6 +20,7 @@
     rejectButtonStyle="danger"
     @confirm="saveHandler((close = true))"
     @reject="closeNote"
+    @cancel="pendingRoute = null"
   />
 
   <!-- Draft Modal -->
@@ -38,12 +39,20 @@
     "
   />
 
+  <NewGroupModal v-model="isNewGroupModalVisible" @confirm="setGroup" />
+
   <LoadingIndicator ref="loadingIndicator" class="flex h-full flex-col">
     <!-- Header -->
     <div class="flex flex-col-reverse md:flex-row md:items-baseline">
+      <CustomButton
+        :iconPath="globalStore.sideBarHidden ? mdilChevronRight : mdilChevronLeft"
+        :title="globalStore.sideBarHidden ? 'Show sidebar' : 'Hide sidebar'"
+        class="mr-2 hidden md:block print:hidden"
+        @click="globalStore.sideBarHidden = !globalStore.sideBarHidden"
+      />
       <!-- Title -->
       <div class="grow truncate text-3xl leading-[1.6em]">
-        <span v-show="!editMode" :title="note.title">{{ note.title }}</span>
+        <span v-show="!editMode" :title="note.name">{{ note.name }}</span>
         <input
           v-show="editMode"
           v-model.trim="newTitle"
@@ -54,6 +63,14 @@
 
       <!-- Buttons -->
       <div class="flex shrink-0 self-end md:self-baseline print:hidden">
+        <CustomButton
+          v-show="editMode"
+          :label="newGroup || 'No Group'"
+          :iconPath="mdilFolder"
+          class="mr-1"
+          @click="toggleGroupMenu"
+        />
+        <PrimeMenu ref="groupMenu" :model="groupMenuItems" :popup="true" />
         <!-- Delete Button -->
         <CustomButton
           v-show="canModify && !isNewNote"
@@ -120,17 +137,29 @@
 
 <script setup>
 import { mdiNoteOffOutline } from "@mdi/js";
-import { mdilContentSave, mdilDelete } from "@mdi/light-js";
+import {
+  mdilChevronLeft,
+  mdilChevronRight,
+  mdilContentSave,
+  mdilDelete,
+  mdilFolder,
+  mdilFolderPlus,
+} from "@mdi/light-js";
 import Mousetrap from "mousetrap";
 import { useToast } from "primevue/usetoast";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRouter,
+} from "vue-router";
 
 import {
   apiErrorHandler,
   createAttachment,
   createNote,
   deleteNote,
+  getGroups,
   getNote,
   updateNote,
 } from "../api.js";
@@ -138,12 +167,14 @@ import { Note } from "../classes.js";
 import ConfirmModal from "../components/ConfirmModal.vue";
 import CustomButton from "../components/CustomButton.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
+import NewGroupModal from "../components/NewGroupModal.vue";
+import PrimeMenu from "../components/PrimeMenu.vue";
 import Toggle from "../components/Toggle.vue";
 import ToastEditor from "../components/toastui/ToastEditor.vue";
 import ToastViewer from "../components/toastui/ToastViewer.vue";
 import { authTypes } from "../constants.js";
 import { useGlobalStore } from "../globalStore.js";
-import { getToastOptions } from "../helpers.js";
+import { getToastOptions, joinNoteTitle } from "../helpers.js";
 import { isCurrentTokenStored } from "../tokenStorage.js";
 
 const props = defineProps({
@@ -165,6 +196,11 @@ const note = ref({});
 const reservedFilenameCharacters = /[<>:"/\\|?*]/;
 const router = useRouter();
 const newTitle = ref();
+const newGroup = ref(null);
+const groupMenu = ref();
+const groupMenuItems = ref([]);
+const isNewGroupModalVisible = ref(false);
+let pendingRoute = null;
 const toast = useToast();
 const toastEditor = ref();
 const unsavedChanges = ref(false);
@@ -177,6 +213,8 @@ function init() {
 
   loadingIndicator.value.setLoading();
   if (props.title) {
+    editMode.value = false;
+    unsavedChanges.value = false;
     getNote(props.title)
       .then((data) => {
         note.value = data;
@@ -192,6 +230,7 @@ function init() {
       });
   } else {
     newTitle.value = "";
+    newGroup.value = null;
     note.value = new Note();
     // Set the editMode to false to close any existing editors.
     // This ensures the editor is cleanly reinitialised in an empty state.
@@ -223,7 +262,8 @@ function editHandler() {
 }
 
 function setEditMode() {
-  newTitle.value = note.value.title;
+  newTitle.value = note.value.name;
+  newGroup.value = note.value.group;
   unsavedChanges.value = false;
   editMode.value = true;
 }
@@ -241,6 +281,8 @@ function deleteHandler() {
 function deleteConfirmedHandler() {
   deleteNote(note.value.title)
     .then(() => {
+      clearDraft();
+      editMode.value = false;
       toast.add(getToastOptions("Note deleted ✓", "Success", "success"));
       router.push({ name: "home" });
     })
@@ -270,10 +312,11 @@ function saveHandler(close = false) {
 
   // Save Note
   let newContent = toastEditor.value.getMarkdown();
+  const fullTitle = joinNoteTitle(newGroup.value, newTitle.value);
   if (isNewNote.value) {
-    saveNew(newTitle.value, newContent, close);
+    saveNew(fullTitle, newContent, close);
   } else {
-    saveExisting(newTitle.value, newContent, close);
+    saveExisting(fullTitle, newContent, close);
   }
 }
 
@@ -314,6 +357,7 @@ function saveExisting(newTitle, newContent, close = false) {
 }
 
 function noteSaveFailure(error) {
+  pendingRoute = null;
   if (error.response?.status === 409) {
     toast.add(
       getToastOptions(
@@ -340,6 +384,7 @@ function noteSaveSuccess(close = false) {
 
 // Note Closure
 function closeHandler() {
+  pendingRoute = null;
   if (isContentChanged()) {
     isSaveChangesModalVisible.value = true;
   } else {
@@ -350,11 +395,50 @@ function closeHandler() {
 function closeNote() {
   clearDraft();
   editMode.value = false;
-  if (isNewNote.value) {
+  unsavedChanges.value = false;
+  setBeforeUnloadConfirmation(false);
+  if (pendingRoute) {
+    const to = pendingRoute;
+    pendingRoute = null;
+    router.push(to);
+  } else if (isNewNote.value) {
     router.push({ name: "home" });
-  } else {
-    editMode.value = false;
   }
+}
+
+// Groups
+function toggleGroupMenu(event) {
+  const target = event.currentTarget;
+  getGroups()
+    .then((groups) => {
+      if (newGroup.value && !groups.includes(newGroup.value)) {
+        groups.push(newGroup.value);
+      }
+      groups.sort((a, b) => a.localeCompare(b));
+      groupMenuItems.value = [
+        { label: "No Group", command: () => setGroup(null) },
+        ...groups.map((group) => ({
+          label: group,
+          icon: mdilFolder,
+          command: () => setGroup(group),
+        })),
+        { separator: true },
+        {
+          label: "New Group",
+          icon: mdilFolderPlus,
+          command: () => (isNewGroupModalVisible.value = true),
+        },
+      ];
+      groupMenu.value.toggle({ currentTarget: target });
+    })
+    .catch((error) => {
+      apiErrorHandler(error, toast);
+    });
+}
+
+function setGroup(group) {
+  newGroup.value = group;
+  startContentChangedTimeout();
 }
 
 // Image Upload
@@ -528,10 +612,21 @@ function loadDefaultEditorMode() {
 
 function isContentChanged() {
   return (
-    newTitle.value != note.value.title ||
+    joinNoteTitle(newGroup.value, newTitle.value) != note.value.title ||
     toastEditor.value.getMarkdown() != note.value.content
   );
 }
+
+function unsavedChangesGuard(to) {
+  if (editMode.value && isContentChanged()) {
+    pendingRoute = to.fullPath;
+    isSaveChangesModalVisible.value = true;
+    return false;
+  }
+}
+
+onBeforeRouteLeave(unsavedChangesGuard);
+onBeforeRouteUpdate(unsavedChangesGuard);
 
 watch(() => props.title, init);
 onMounted(init);

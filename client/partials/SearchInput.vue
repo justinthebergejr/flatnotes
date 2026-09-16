@@ -10,7 +10,7 @@
         type="text"
         ref="input"
         v-model="searchTerm"
-        v-focus
+        v-focus="autofocus"
         class="w-full bg-transparent focus:outline-none"
         :placeholder="placeholder"
         @keydown="keydownHandler"
@@ -55,6 +55,7 @@ import * as constants from "../constants.js";
 import { getToastOptions } from "../helpers.js";
 
 const props = defineProps({
+  autofocus: { type: Boolean, default: true },
   initialSearchTerm: { type: String, default: "" },
   large: Boolean,
   placeholder: { type: String, default: "Search..." },

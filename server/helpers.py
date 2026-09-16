@@ -25,6 +25,35 @@ def is_valid_filename(value):
     return value
 
 
+RESERVED_GROUP_NAMES = ["attachments"]
+
+
+def is_valid_note_path(value):
+    """Raise ValueError if the declared string is not a valid note title. A
+    title can optionally be prefixed with a single group name followed by a
+    forward slash e.g. 'Group/Title'."""
+    parts = value.split("/")
+    if len(parts) > 2:
+        raise ValueError("title can include at most one group")
+    if any(part.strip() == "" or part != part.strip() for part in parts):
+        raise ValueError("title and group cannot be blank or padded")
+    for part in parts:
+        is_valid_filename(part)
+    if len(parts) == 2:
+        is_valid_group_name(parts[0])
+    return value
+
+
+def is_valid_group_name(value):
+    """Raise ValueError if the declared string is not a valid group name."""
+    if value.strip() == "" or value != value.strip():
+        raise ValueError("group name cannot be blank or padded")
+    is_valid_filename(value)
+    if value.startswith(".") or value.lower() in RESERVED_GROUP_NAMES:
+        raise ValueError(f"'{value}' is not a valid group name")
+    return value
+
+
 def strip_whitespace(value):
     """Return the declared string with leading and trailing whitespace
     removed."""

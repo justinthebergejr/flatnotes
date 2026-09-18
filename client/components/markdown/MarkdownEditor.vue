@@ -21,6 +21,7 @@
 
       <div
         v-show="viewMode !== 'edit'"
+        ref="previewElement"
         class="markdown-body min-w-0 flex-1 overflow-y-auto py-4"
         :class="{ 'hidden md:block': viewMode === 'split' }"
         v-html="previewHtml"
@@ -32,12 +33,21 @@
 <script setup>
 import { EditorState, Prec } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+} from "vue";
 
 import MarkdownToolbar from "./MarkdownToolbar.vue";
 import codemirrorExtensions from "./codemirrorSetup.js";
 import { replaceSelection } from "./editorCommands.js";
 import renderMarkdown from "./renderMarkdown.js";
+import createScrollSync from "./scrollSync.js";
 
 const viewModeStorageKey = "markdownEditorViewMode";
 const previewDebounceMs = 200;
@@ -51,8 +61,10 @@ const props = defineProps({
 const emit = defineEmits(["change", "keydown"]);
 
 const editorElement = ref();
+const previewElement = ref();
 
 const view = shallowRef(null);
+let scrollSync = null;
 const previewSource = ref(props.initialValue || "");
 const viewMode = ref(loadViewMode());
 
@@ -138,10 +150,16 @@ onMounted(() => {
     }),
   });
   view.value.focus();
+  scrollSync = createScrollSync(view.value, previewElement.value);
+});
+
+watch([previewHtml, viewMode], () => {
+  nextTick(() => scrollSync?.refresh());
 });
 
 onBeforeUnmount(() => {
   clearTimeout(previewTimeout);
+  scrollSync?.destroy();
   view.value?.destroy();
 });
 

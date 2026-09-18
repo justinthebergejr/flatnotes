@@ -14,6 +14,7 @@ import taskLists from "markdown-it-task-lists";
 
 import containers from "./containers.js";
 import highlight from "./highlight.js";
+import sourceLines from "./sourceLines.js";
 import strictMathBlocks from "./strictMathBlocks.js";
 
 function callable(mod) {
@@ -48,6 +49,7 @@ export default function createMarkdownItBase() {
   md.use(callable(taskLists), { label: false });
   md.use(anchor, { slugify, tabIndex: false });
   md.use(containers);
+  md.use(sourceLines);
 
   md.linkify.set({ fuzzyLink: true });
 

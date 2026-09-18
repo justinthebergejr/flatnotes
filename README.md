@@ -76,10 +76,10 @@ Instructions to come soon
 
 ## Staying Up to Date with Upstream
 
-To pull in new changes from the original project:
+To pull in new changes from the project:
 
 ```shell
-git remote add upstream https://github.com/dullage/flatnotes.git
+git remote add upstream https://github.com/justinthebergejr/flatnotes.git
 git fetch upstream
 git merge upstream/develop
 ```

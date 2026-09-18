@@ -7,7 +7,10 @@ flatnotes is designed to be a distraction-free note-taking app that puts your no
 ## Features
 
 * Mobile responsive web interface.
-* Raw/WYSIWYG markdown editor modes.
+* Markdown editor with a live side-by-side preview.
+* Extended markdown: footnotes, definition lists, abbreviations, custom
+  containers, subscript/superscript, highlighting, emoji shortcodes,
+  typographic replacements and LaTeX maths.
 * Advanced search functionality.
 * Note "tagging" functionality.
 * Customisable home page.
@@ -91,8 +94,10 @@ I completely support any contributions you wish to add!
 
 ## Thanks
 
-A thanks to 2 fantastic open-source projects that make flatnotes possible, and to Adam Dullage for creating flatnotes in the first place.
+A thanks to all these  open-source projects that make this possible, and to Adam Dullage for creating flatnotes in the first place.
 
 * [Whoosh](https://whoosh.readthedocs.io/en/latest/intro.html) - A fast, pure Python search engine library.
-* [TOAST UI Editor](https://ui.toast.com/tui-editor) - A GFM Markdown and WYSIWYG editor for the browser.
+* [markdown-it](https://github.com/markdown-it/markdown-it) - The markdown parser used to render notes.
+* [CodeMirror](https://codemirror.net/) - The editor behind the note editing experience.
+* [KaTeX](https://katex.org/) - Fast maths typesetting for the web.
 * [Flatnotes](https://github.com/dullage/flatnotes) - Flatnotes

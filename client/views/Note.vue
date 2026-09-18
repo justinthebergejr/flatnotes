@@ -45,13 +45,15 @@
     <!-- Header -->
     <div class="flex flex-col-reverse md:flex-row md:items-baseline">
       <CustomButton
-        :iconPath="globalStore.sideBarHidden ? mdilChevronRight : mdilChevronLeft"
+        :iconPath="
+          globalStore.sideBarHidden ? mdilChevronRight : mdilChevronLeft
+        "
         :title="globalStore.sideBarHidden ? 'Show sidebar' : 'Hide sidebar'"
         class="mr-2 hidden md:block print:hidden"
         @click="globalStore.sideBarHidden = !globalStore.sideBarHidden"
       />
-      <!-- Title -->
-      <div class="grow truncate text-3xl leading-[1.6em]">
+      <!-- Title. The right margin keeps it from colliding with the controls. -->
+      <div class="grow truncate text-3xl leading-[1.6em] md:mr-6">
         <span v-show="!editMode" :title="note.name">{{ note.name }}</span>
         <input
           v-show="editMode"
@@ -61,30 +63,45 @@
         />
       </div>
 
-      <!-- Buttons -->
-      <div class="flex shrink-0 self-end md:self-baseline print:hidden">
+      <!-- Controls. Everything here is secondary to the title, so it is set a
+           size down and in a muted colour. -->
+      <div
+        class="flex shrink-0 items-center gap-1 self-end md:self-baseline print:hidden"
+      >
         <CustomButton
           v-show="editMode"
           :label="newGroup || 'No Group'"
           :iconPath="mdilFolder"
-          class="mr-1"
+          iconSize="1em"
+          class="text-sm"
           @click="toggleGroupMenu"
         />
         <PrimeMenu ref="groupMenu" :model="groupMenuItems" :popup="true" />
-        <!-- Delete Button -->
+
+        <!-- Save status. Appears only while something is happening and fades
+             out again, unless a save actually failed. -->
+        <Transition name="save-status">
+          <span
+            v-if="saveStatus"
+            class="whitespace-nowrap px-1 text-sm"
+            :class="
+              saveStatus.isError
+                ? 'font-semibold text-theme-danger'
+                : 'text-theme-text-very-muted'
+            "
+            >{{ saveStatus.label }}</span
+          >
+        </Transition>
+
+        <!-- Save. Only shown for the things autosave deliberately will not do:
+             creating a new note, and applying a title or group change. -->
         <CustomButton
-          v-show="canModify && !isNewNote"
-          label="Delete"
-          :iconPath="mdilDelete"
-          @click="deleteHandler"
-        />
-        <!-- Save Button -->
-        <CustomButton
-          v-show="editMode"
+          v-show="needsManualSave"
           label="Save"
           :iconPath="mdilContentSave"
+          iconSize="1em"
+          class="relative text-sm"
           @click="saveHandler((close = false))"
-          class="relative ml-1"
         >
           <!-- Unsaved Changes Indicator -->
           <div
@@ -92,12 +109,25 @@
             class="absolute right-1 h-1.5 w-1.5 rounded-full bg-theme-brand"
           ></div>
         </CustomButton>
+
+        <!-- Everything infrequent or destructive lives in here. -->
+        <CustomButton
+          v-show="overflowMenuItems.length"
+          :iconPath="mdilDotsHorizontal"
+          title="More actions"
+          @click="toggleOverflowMenu"
+        />
+        <PrimeMenu
+          ref="overflowMenu"
+          :model="overflowMenuItems"
+          :popup="true"
+        />
+
         <!-- Edit Toggle -->
         <Toggle
           v-if="canModify"
           label="Edit"
           :isOn="editMode"
-          class="ml-1"
           @click="toggleEditModeHandler"
         />
       </div>
@@ -105,19 +135,19 @@
 
     <hr v-if="!editMode" class="my-4 border-theme-border" />
 
-    <!-- Content -->
-    <div class="flex-1">
-      <ToastViewer
+    <!-- Content. min-h-0 lets the editor own its own scrolling so the toolbar
+         stays in view instead of being pushed off the top of the page. -->
+    <div class="flex min-h-0 flex-1 flex-col">
+      <MarkdownViewer
         v-if="!editMode"
         :initialValue="note.content"
-        class="toast-viewer pb-4"
+        class="overflow-y-auto pb-4"
       />
-      <ToastEditor
+      <MarkdownEditor
         v-if="editMode"
-        ref="toastEditor"
+        ref="editor"
         :initialValue="getInitialEditorValue()"
-        :initialEditType="loadDefaultEditorMode()"
-        :addImageBlobHook="addImageBlobHook"
+        :uploadImage="postAttachment"
         @change="startContentChangedTimeout"
         @keydown="keydownHandler"
       />
@@ -126,12 +156,16 @@
 </template>
 
 <style>
-/* Disable checkboxes in view mode. See https://github.com/nhn/tui.editor/issues/1087. */
-.toast-viewer li.task-list-item {
-  pointer-events: none;
+/* The save status appears promptly and lingers just long enough to be read. */
+.save-status-enter-active {
+  transition: opacity 0.15s ease;
 }
-.toast-viewer li.task-list-item a {
-  pointer-events: auto;
+.save-status-leave-active {
+  transition: opacity 0.6s ease;
+}
+.save-status-enter-from,
+.save-status-leave-to {
+  opacity: 0;
 }
 </style>
 
@@ -142,17 +176,14 @@ import {
   mdilChevronRight,
   mdilContentSave,
   mdilDelete,
+  mdilDotsHorizontal,
   mdilFolder,
   mdilFolderPlus,
 } from "@mdi/light-js";
 import Mousetrap from "mousetrap";
 import { useToast } from "primevue/usetoast";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import {
-  onBeforeRouteLeave,
-  onBeforeRouteUpdate,
-  useRouter,
-} from "vue-router";
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from "vue-router";
 
 import {
   apiErrorHandler,
@@ -167,11 +198,11 @@ import { Note } from "../classes.js";
 import ConfirmModal from "../components/ConfirmModal.vue";
 import CustomButton from "../components/CustomButton.vue";
 import LoadingIndicator from "../components/LoadingIndicator.vue";
+import MarkdownEditor from "../components/markdown/MarkdownEditor.vue";
+import MarkdownViewer from "../components/markdown/MarkdownViewer.vue";
 import NewGroupModal from "../components/NewGroupModal.vue";
 import PrimeMenu from "../components/PrimeMenu.vue";
 import Toggle from "../components/Toggle.vue";
-import ToastEditor from "../components/toastui/ToastEditor.vue";
-import ToastViewer from "../components/toastui/ToastViewer.vue";
 import { authTypes } from "../constants.js";
 import { useGlobalStore } from "../globalStore.js";
 import { getToastOptions, joinNoteTitle } from "../helpers.js";
@@ -185,6 +216,32 @@ const canModify = computed(
   () => globalStore.config.authType != authTypes.readOnly,
 );
 let contentChangedTimeout = null;
+let autosaveTimeout = null;
+let autosaveStatusTimeout = null;
+let autosaveInFlight = false;
+const autosaveState = ref("idle");
+
+const saveStatus = computed(
+  () =>
+    ({
+      saving: { label: "Saving…", isError: false },
+      saved: { label: "✓ Saved", isError: false },
+      error: { label: "Autosave failed", isError: true },
+    })[autosaveState.value] || null,
+);
+
+
+/*
+ * Manual saving only covers what autosave deliberately leaves alone: creating a
+ * note that has never been saved, and applying a title or group change.
+ */
+const needsManualSave = computed(() => {
+  if (!editMode.value) return false;
+  return (
+    isNewNote.value ||
+    joinNoteTitle(newGroup.value, newTitle.value) !== note.value.title
+  );
+});
 const editMode = ref(false);
 const globalStore = useGlobalStore();
 const isSaveChangesModalVisible = ref(false);
@@ -199,10 +256,42 @@ const newTitle = ref();
 const newGroup = ref(null);
 const groupMenu = ref();
 const groupMenuItems = ref([]);
+const overflowMenu = ref();
+
+/*
+ * Infrequent and destructive actions. Manual saving stays reachable here even
+ * when the Save button is hidden, so the shortcut always has a visible twin.
+ */
+const overflowMenuItems = computed(() => {
+  const items = [];
+  if (editMode.value) {
+    items.push({
+      label: "Save now",
+      icon: mdilContentSave,
+      keyboardShortcut: "Ctrl + Enter",
+      command: () => saveHandler(false),
+    });
+  }
+  if (canModify.value && !isNewNote.value) {
+    if (items.length) {
+      items.push({ separator: true });
+    }
+    items.push({
+      label: "Delete note",
+      icon: mdilDelete,
+      command: deleteHandler,
+    });
+  }
+  return items;
+});
+
+function toggleOverflowMenu(event) {
+  overflowMenu.value.toggle({ currentTarget: event.currentTarget });
+}
 const isNewGroupModalVisible = ref(false);
 let pendingRoute = null;
 const toast = useToast();
-const toastEditor = ref();
+const editor = ref();
 const unsavedChanges = ref(false);
 
 function init() {
@@ -211,6 +300,8 @@ function init() {
     return;
   }
 
+  clearAutosaveTimeout();
+  setAutosaveState("idle");
   loadingIndicator.value.setLoading();
   if (props.title) {
     editMode.value = false;
@@ -293,8 +384,8 @@ function deleteConfirmedHandler() {
 
 // Note Saving
 function saveHandler(close = false) {
-  // Save Default Editor Mode
-  saveDefaultEditorMode();
+  // A manual save supersedes any pending autosave.
+  clearAutosaveTimeout();
 
   // Empty Title Validation
   if (!newTitle.value) {
@@ -311,7 +402,7 @@ function saveHandler(close = false) {
   }
 
   // Save Note
-  let newContent = toastEditor.value.getMarkdown();
+  let newContent = editor.value.getMarkdown();
   const fullTitle = joinNoteTitle(newGroup.value, newTitle.value);
   if (isNewNote.value) {
     saveNew(fullTitle, newContent, close);
@@ -385,6 +476,7 @@ function noteSaveSuccess(close = false) {
 // Note Closure
 function closeHandler() {
   pendingRoute = null;
+  flushAutosave();
   if (isContentChanged()) {
     isSaveChangesModalVisible.value = true;
   } else {
@@ -393,6 +485,8 @@ function closeHandler() {
 }
 
 function closeNote() {
+  clearAutosaveTimeout();
+  setAutosaveState("idle");
   clearDraft();
   editMode.value = false;
   unsavedChanges.value = false;
@@ -442,21 +536,6 @@ function setGroup(group) {
 }
 
 // Image Upload
-function addImageBlobHook(file, callback) {
-  const altTextInputValue = document.getElementById(
-    "toastuiAltTextInput",
-  )?.value;
-
-  // Upload the image then use the callback to insert the URL into the editor
-  postAttachment(file).then(function (data) {
-    if (data) {
-      // If the user has entered an alt text, use it. Otherwise, use the filename returned by the API.
-      const altText = altTextInputValue ? altTextInputValue : data.filename;
-      callback(data.url, altText);
-    }
-  });
-}
-
 function postAttachment(file) {
   // Invalid Character Validation
   if (reservedFilenameCharacters.test(file.name)) {
@@ -499,9 +578,107 @@ function postAttachment(file) {
     });
 }
 
+// Autosave
+/*
+ * Content is written back to the server a couple of seconds after typing stops.
+ * Only the content is autosaved, under the note's existing title: renaming stays
+ * a deliberate action so a half-typed title can never strand a note under the
+ * wrong name. Notes that have never been saved have no title to save against, so
+ * they stay draft-only until the first manual save.
+ */
+const autosaveDelay = 2000;
+const savedStatusDuration = 1500;
+
+/*
+ * "Saving…" and "✓ Saved" are transient - autosave runs constantly, so a
+ * permanent status would just be noise. A failure stays put until the next
+ * successful save.
+ */
+function setAutosaveState(state) {
+  autosaveState.value = state;
+  clearTimeout(autosaveStatusTimeout);
+  if (state === "saved") {
+    autosaveStatusTimeout = setTimeout(() => {
+      if (autosaveState.value === "saved") {
+        autosaveState.value = "idle";
+      }
+    }, savedStatusDuration);
+  }
+}
+
+function canAutosave() {
+  return (
+    canModify.value && editMode.value && !isNewNote.value && Boolean(note.value.title)
+  );
+}
+
+function scheduleAutosave() {
+  clearAutosaveTimeout();
+  if (canAutosave()) {
+    autosaveTimeout = setTimeout(autosave, autosaveDelay);
+  }
+}
+
+function clearAutosaveTimeout() {
+  if (autosaveTimeout == null) return;
+  clearTimeout(autosaveTimeout);
+  autosaveTimeout = null;
+}
+
+// Run any pending autosave now, e.g. before navigating away.
+function flushAutosave() {
+  if (autosaveTimeout != null) {
+    clearAutosaveTimeout();
+    autosave();
+  }
+}
+
+function autosave() {
+  autosaveTimeout = null;
+  if (!canAutosave() || autosaveInFlight) {
+    return;
+  }
+
+  const newContent = editor.value?.getMarkdown();
+  if (newContent == null || newContent === note.value.content) {
+    return;
+  }
+
+  autosaveInFlight = true;
+  setAutosaveState("saving");
+  const titleAtSave = note.value.title;
+
+  updateNote(titleAtSave, titleAtSave, newContent)
+    .then((data) => {
+      // The note may have been renamed or closed while the request was in
+      // flight; only apply the result if it still refers to this note.
+      if (note.value.title === titleAtSave) {
+        note.value.content = data.content;
+        note.value.lastModified = data.lastModified;
+        if (editMode.value && editor.value) {
+          contentChangedHandler();
+        }
+      }
+      setAutosaveState("saved");
+    })
+    .catch((error) => {
+      // Keep the local draft so nothing is lost, and only complain once per
+      // failure rather than on every retry.
+      const alreadyFailing = autosaveState.value === "error";
+      setAutosaveState("error");
+      if (!alreadyFailing) {
+        apiErrorHandler(error, toast);
+      }
+    })
+    .finally(() => {
+      autosaveInFlight = false;
+    });
+}
+
 // Content Change Watcher
 function startContentChangedTimeout() {
   clearContentChangedTimeout();
+  scheduleAutosave();
   contentChangedTimeout = setTimeout(contentChangedHandler, 1000);
 }
 
@@ -525,7 +702,7 @@ function contentChangedHandler() {
 
 // Drafts
 function saveDraft() {
-  const content = toastEditor.value.getMarkdown();
+  const content = editor.value?.getMarkdown();
   const userHasPersistedToken = isCurrentTokenStored();
   if (content) {
     if (userHasPersistedToken) {
@@ -597,27 +774,18 @@ function setBeforeUnloadConfirmation(enable = true) {
   }
 }
 
-function saveDefaultEditorMode() {
-  const isWysiwygMode = toastEditor.value.isWysiwygMode();
-  localStorage.setItem(
-    "defaultEditorMode",
-    isWysiwygMode ? "wysiwyg" : "markdown",
-  );
-}
-
-function loadDefaultEditorMode() {
-  const defaultWysiwygMode = localStorage.getItem("defaultEditorMode");
-  return defaultWysiwygMode || "markdown";
-}
-
 function isContentChanged() {
+  if (!editor.value) {
+    return false;
+  }
   return (
     joinNoteTitle(newGroup.value, newTitle.value) != note.value.title ||
-    toastEditor.value.getMarkdown() != note.value.content
+    editor.value.getMarkdown() != note.value.content
   );
 }
 
 function unsavedChangesGuard(to) {
+  flushAutosave();
   if (editMode.value && isContentChanged()) {
     pendingRoute = to.fullPath;
     isSaveChangesModalVisible.value = true;
